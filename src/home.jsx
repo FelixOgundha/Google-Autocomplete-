@@ -24,10 +24,21 @@ const loadScript = (url, callback) => {
 function handleScriptLoad(updateQuery, autoCompleteRef) {
   autoComplete = new window.google.maps.places.Autocomplete(
     autoCompleteRef.current,
-    { types: ["(cities)"], componentRestrictions: { country: "ke" } }
+    { componentRestrictions: { country: "ke" } }
   );
   autoComplete.setFields(["address_components", "formatted_address"]);
   autoComplete.addListener("place_changed", () =>
+    handlePlaceSelect(updateQuery)
+  );
+}
+
+function handleSecondScriptLoad(updateQuery, secondCompleteRef) {
+  autoComplete = new window.google.maps.places.Autocomplete(
+    secondCompleteRef.current,
+    { componentRestrictions: { country: "ke" } }
+  );
+  secondCompleteRef.setFields(["address_components", "formatted_address"]);
+  secondCompleteRef.addListener("place_changed", () =>
     handlePlaceSelect(updateQuery)
   );
 }
@@ -41,25 +52,50 @@ async function handlePlaceSelect(updateQuery) {
 
 function SearchLocationInput() {
   const [query, setQuery] = useState("");
+  const [secondQuery, setSecondQuery] = useState("");
   const autoCompleteRef = useRef(null);
+  const secondCompleteRef = useRef(null);
 
   useEffect(() => {
     loadScript(
       `https://maps.googleapis.com/maps/api/js?key=AIzaSyBATTdbhGfDzBK1YVOFNXS0Wxhashe4STc&libraries=places`,
-      () => handleScriptLoad(setQuery, autoCompleteRef)
+      () => {
+        handleScriptLoad(setQuery, autoCompleteRef);
+        handleSecondScriptLoad(setQuery, secondCompleteRef)
+      }
     );
   }, []);
 
+  const handleInput = () => {
+    setQuery(autoCompleteRef.current.value)
+    setSecondQuery(secondCompleteRef.current.value)
+  }
+
+  const secondInput = () => {
+    setSecondQuery(secondCompleteRef.current.value)
+  }
   return (
     <div className="search-location-input">
       <input
         ref={autoCompleteRef}
-        onChange={event => setQuery(event.target.value)}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyUp={() => handleInput()}
         placeholder="Enter a City"
         value={query}
+        className="me-4"
       />
 
-      <h2>You are traveling to: {query}</h2>
+      <input
+        ref={secondCompleteRef}
+        onKeyUp={() => secondInput()}
+        onChange={(e) => setSecondQuery(e.target.value)}
+        placeholder="Enter a second City"
+        value={secondQuery}
+      />
+
+
+      <h2>You are traveling from: {query}</h2>
+      <h2>You are traveling to: {secondQuery}</h2>
     </div>
   );
 }
