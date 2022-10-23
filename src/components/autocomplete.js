@@ -1,75 +1,153 @@
-// Autocomplete.js
-import React, { Component } from 'react';
-import styled from 'styled-components';
+import * as React from 'react';
+import Box from '@mui/material/Box';
+import TextField from '@mui/material/TextField';
+import Autocomplete from '@mui/material/Autocomplete';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
+import Grid from '@mui/material/Grid';
+import Typography from '@mui/material/Typography';
+import parse from 'autosuggest-highlight/parse';
+import throttle from 'lodash/throttle';
 
-const Wrapper = styled.div`
-  position: relative;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 20px;
-  text-align:center;
-`;
+// This key was created specifically for the demo in mui.com.
+// You need to create a new one for your application.
+const GOOGLE_MAPS_API_KEY = 'AIzaSyC3aviU6KHXAjoSnxcw6qbOhjnFctbxPkE';
 
-class AutoComplete extends Component {
-  constructor(props) {
-    super(props);
-    this.clearSearchBox = this.clearSearchBox.bind(this);
+function loadScript(src, position, id) {
+  if (!position) {
+    return;
   }
 
-  componentDidMount({ map, mapApi } = this.props) {
-    const options = {
-      // restrict your search to a specific type of result
-      types: ['address'],
-      // restrict your search to a specific country, or an array of countries
-      // componentRestrictions: { country: ['gb', 'us'] },
-    };
-    this.autoComplete = new mapApi.places.Autocomplete(
-      this.searchInput,
-      options,
-    );
-    this.autoComplete.addListener('place_changed', this.onPlaceChanged);
-    this.autoComplete.bindTo('bounds', map);
-  }
-
-  componentWillUnmount({ mapApi } = this.props) {
-    mapApi.event.clearInstanceListeners(this.searchInput);
-  }
-
-  onPlaceChanged = ({ map, addplace } = this.props) => {
-    const place = this.autoComplete.getPlace();
-
-    if (!place.geometry) return;
-    if (place.geometry.viewport) {
-      map.fitBounds(place.geometry.viewport);
-    } else {
-      map.setCenter(place.geometry.location);
-      map.setZoom(17);
-    }
-
-    addplace(place);
-    this.searchInput.blur();
-  };
-
-  clearSearchBox() {
-    this.searchInput.value = '';
-  }
-
-  render() {
-    return (
-      <Wrapper>
-        <input
-          className="search-input"
-          ref={(ref) => {
-            this.searchInput = ref;
-          }}
-          type="text"
-          onFocus={this.clearSearchBox}
-          placeholder="Enter a location"
-        />
-      </Wrapper>
-    );
-  }
+  const script = document.createElement('script');
+  script.setAttribute('async', '');
+  script.setAttribute('id', id);
+  script.src = src;
+  position.appendChild(script);
 }
 
-export default AutoComplete;
+const autocompleteService = { current: null };
+
+export default function GoogleMaps() {
+  const [value, setValue] = React.useState(null);
+  const [inputValue, setInputValue] = React.useState('');
+  const [options, setOptions] = React.useState([]);
+  const loaded = React.useRef(false);
+
+  if (typeof window !== 'undefined' && !loaded.current) {
+    if (!document.querySelector('#google-maps')) {
+      loadScript(
+        `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`,
+        document.querySelector('head'),
+        'google-maps',
+      );
+    }
+
+    loaded.current = true;
+  }
+
+  const fetch = React.useMemo(
+    () =>
+      throttle((request, callback) => {
+        autocompleteService.current.getPlacePredictions(request, callback);
+      }, 200),
+    [],
+  );
+
+  React.useEffect(() => {
+    let active = true;
+
+    if (!autocompleteService.current && window.google) {
+      autocompleteService.current =
+        new window.google.maps.places.AutocompleteService();
+    }
+    if (!autocompleteService.current) {
+      return undefined;
+    }
+
+    if (inputValue === '') {
+      setOptions(value ? [value] : []);
+      return undefined;
+    }
+
+    fetch({ input: inputValue }, (results) => {
+      if (active) {
+        let newOptions = [];
+
+        if (value) {
+          newOptions = [value];
+        }
+
+        if (results) {
+          newOptions = [...newOptions, ...results];
+        }
+
+        setOptions(newOptions);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [value, inputValue, fetch]);
+
+  return (
+    <Autocomplete
+      id="google-map-demo"
+      sx={{ width: 300 }}
+      getOptionLabel={(option) =>
+        typeof option === 'string' ? option : option.description
+      }
+      filterOptions={(x) => x}
+      options={options}
+      autoComplete
+      includeInputInList
+      filterSelectedOptions
+      value={value}
+      onChange={(event, newValue) => {
+        setOptions(newValue ? [newValue, ...options] : options);
+        setValue(newValue);
+      }}
+      onInputChange={(event, newInputValue) => {
+        setInputValue(newInputValue);
+      }}
+      renderInput={(params) => (
+        <TextField {...params} label="Add a location" fullWidth />
+      )}
+      renderOption={(props, option) => {
+        const matches = option.structured_formatting.main_text_matched_substrings;
+        const parts = parse(
+          option.structured_formatting.main_text,
+          matches.map((match) => [match.offset, match.offset + match.length]),
+        );
+
+        return (
+          <li {...props}>
+            <Grid container alignItems="center">
+              <Grid item>
+                <Box
+                  component={LocationOnIcon}
+                  sx={{ color: 'text.secondary', mr: 2 }}
+                />
+              </Grid>
+              <Grid item xs>
+                {parts.map((part, index) => (
+                  <span
+                    key={index}
+                    style={{
+                      fontWeight: part.highlight ? 700 : 400,
+                    }}
+                  >
+                    {part.text}
+                  </span>
+                ))}
+
+                <Typography variant="body2" color="text.secondary">
+                  {option.structured_formatting.secondary_text}
+                </Typography>
+              </Grid>
+            </Grid>
+          </li>
+        );
+      }}
+    />
+  );
+}
